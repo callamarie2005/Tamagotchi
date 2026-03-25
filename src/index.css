@@ -1,0 +1,19 @@
+@import 'tailwindcss';
+
+:root {
+  font-family: 'Press Start 2P', monospace;
+  line-height: 1.3;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: auto;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}

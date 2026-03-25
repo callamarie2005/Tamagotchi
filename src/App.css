@@ -1,0 +1,97 @@
+.device-shell {
+  box-shadow:
+    0 0 0 4px #d8c7a7,
+    0 14px 24px rgba(58, 36, 20, 0.35);
+}
+
+.pixel-canvas {
+  width: 180px;
+  display: grid;
+  gap: 0;
+  margin: 0 auto;
+  image-rendering: pixelated;
+  animation: bounce 1.4s steps(2, end) infinite;
+}
+
+.pixel {
+  width: 16px;
+  aspect-ratio: 1 / 1;
+}
+
+.pixel-button {
+  transition:
+    transform 120ms steps(2, end),
+    box-shadow 120ms steps(2, end);
+  box-shadow: 2px 2px 0 #8b4513;
+}
+
+.pixel-button:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 #8b4513;
+}
+
+.pixel-button:active {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 #8b4513;
+}
+
+.pixel-input:focus {
+  outline: 2px solid #8b4513;
+  outline-offset: 1px;
+}
+
+.meter {
+  height: 12px;
+  border: 2px solid #8b4513;
+  background-color: #f5f5dc;
+}
+
+.meter > span {
+  display: block;
+  height: 100%;
+  transition: width 240ms steps(5, end);
+}
+
+.sick-mode {
+  filter: grayscale(1) contrast(1.2);
+  position: relative;
+  isolation: isolate;
+}
+
+.sick-mode::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(45deg, rgba(20, 20, 20, 0.22) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(10, 10, 10, 0.12) 25%, transparent 25%);
+  background-size: 6px 6px;
+  pointer-events: none;
+}
+
+.status-icon {
+  position: absolute;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.status-icon.skull {
+  top: -10px;
+  right: -8px;
+}
+
+.status-icon.hat {
+  top: -16px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+@keyframes bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
