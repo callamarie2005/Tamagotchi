@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
-import tamagotchiShell from "./assets/tamagotchi_shell.svg";
+import tamagotchiShell from "./assets/Gemini_Generated_Image_nbev5gnbev5gnbev.png";
 
 const STORAGE_KEY = "habit_gotchi_v2";
 
