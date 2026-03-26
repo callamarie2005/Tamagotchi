@@ -26,7 +26,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const VIRTUAL_MINUTE_MS = 1000;
 
 function getTodayKey(date = new Date()) {
-  return date.toISOString().slice(0, 10);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function getArchetype(level) {
@@ -79,6 +82,74 @@ function getPetMood({ hunger, health, currentHour, hasCompletedToday }) {
   if (currentHour >= 18 && !hasCompletedToday) return "sad";
   if (hunger < 35) return "hungry";
   return "happy";
+}
+
+function applyMidnightTransition(prev, nextVirtualNowMs) {
+  const now = new Date(nextVirtualNowMs);
+  const nowKey = getTodayKey(now);
+  const prevVirtualMs = prev.virtualNowMs || Date.now();
+  const prevKey = getTodayKey(new Date(prevVirtualMs));
+  const dayChanged = nowKey !== prevKey;
+
+  let nextState = {
+    ...prev,
+    virtualNowMs: nextVirtualNowMs,
+  };
+
+  const hour = now.getHours();
+  const minute = now.getMinutes();
+  const atMidnight = hour === 0 && minute === 0;
+
+  if (atMidnight && prev.lastMidnightCheckDay !== nowKey) {
+    const totalCount = prev.tasks.length;
+    const completedTotal = prev.tasks.filter((task) => task.completed).length;
+    const completedRatio = totalCount > 0 ? completedTotal / totalCount : 0;
+    const midnightInkBonus = completedRatio > 0.5 ? 10 : 0;
+
+    const hadUnfinishedHighTask = prev.tasks.some(
+      (task) => task.priority === "high" && !task.completed
+    );
+    const hadHabitToday = (prev.completedHabitsByDay[prevKey] ?? 0) > 0;
+    const nextHabitStreak = hadHabitToday ? prev.habitStreakCount + 1 : 0;
+    const nextStreakActive = nextHabitStreak >= 3;
+
+    let newInk = prev.ink + midnightInkBonus;
+    let newLevel = prev.level;
+    let needed = newLevel * 100;
+    while (newInk >= needed) {
+      newInk -= needed;
+      newLevel += 1;
+      needed = newLevel * 100;
+    }
+
+    nextState = {
+      ...nextState,
+      ink: newInk,
+      level: newLevel,
+      health: hadUnfinishedHighTask ? clamp(prev.health - 30, 0, 100) : prev.health,
+      skullActive: hadUnfinishedHighTask ? true : prev.skullActive,
+      habitStreakCount: nextHabitStreak,
+      habitDoneStreakActive: nextStreakActive,
+      streakBonusDay: nextStreakActive ? nowKey : null,
+      lastMidnightCheckDay: nowKey,
+    };
+  }
+
+  if (dayChanged) {
+    const oneTimeTasks = nextState.tasks
+      .filter((task) => task.type === "one-time")
+      .map((task) => ({ ...task, completed: false, completedAt: null }));
+    const dailyHabits = DAILY_HABITS.map((name) => toTask(name, "daily", "medium"));
+    nextState = {
+      ...nextState,
+      tasks: [...dailyHabits, ...oneTimeTasks],
+      lastResetDay: nowKey,
+      completedCountByDay: { ...nextState.completedCountByDay, [nowKey]: 0 },
+      completedHabitsByDay: { ...nextState.completedHabitsByDay, [nowKey]: 0 },
+    };
+  }
+
+  return nextState;
 }
 
 function makeAudioCtx() {
@@ -229,72 +300,8 @@ function App() {
     const clockInterval = setInterval(() => {
       setPetState((prev) => {
         if (!prev.clockInitialized) return prev;
-
         const nextVirtualNowMs = (prev.virtualNowMs || Date.now()) + 60 * 1000;
-        const now = new Date(nextVirtualNowMs);
-        const nowKey = getTodayKey(now);
-        const prevKey = getTodayKey(new Date(prev.virtualNowMs || Date.now()));
-        const dayChanged = nowKey !== prevKey;
-
-        let nextState = {
-          ...prev,
-          virtualNowMs: nextVirtualNowMs,
-        };
-
-        const hour = now.getHours();
-        const minute = now.getMinutes();
-        const atMidnight = hour === 0 && minute === 0;
-
-        if (atMidnight && prev.lastMidnightCheckDay !== nowKey) {
-          const totalCount = prev.tasks.length;
-          const completedTotal = prev.tasks.filter((task) => task.completed).length;
-          const completedRatio = totalCount > 0 ? completedTotal / totalCount : 0;
-          const midnightInkBonus = completedRatio > 0.5 ? 10 : 0;
-
-          const hadUnfinishedHighTask = prev.tasks.some(
-            (task) => task.priority === "high" && !task.completed
-          );
-          const hadHabitToday = (prev.completedHabitsByDay[prevKey] ?? 0) > 0;
-          const nextHabitStreak = hadHabitToday ? prev.habitStreakCount + 1 : 0;
-          const nextStreakActive = nextHabitStreak >= 3;
-
-          let newInk = prev.ink + midnightInkBonus;
-          let newLevel = prev.level;
-          let needed = newLevel * 100;
-          while (newInk >= needed) {
-            newInk -= needed;
-            newLevel += 1;
-            needed = newLevel * 100;
-          }
-
-          nextState = {
-            ...nextState,
-            ink: newInk,
-            level: newLevel,
-            health: hadUnfinishedHighTask ? clamp(prev.health - 30, 0, 100) : prev.health,
-            skullActive: hadUnfinishedHighTask ? true : prev.skullActive,
-            habitStreakCount: nextHabitStreak,
-            habitDoneStreakActive: nextStreakActive,
-            streakBonusDay: nextStreakActive ? nowKey : null,
-            lastMidnightCheckDay: nowKey,
-          };
-        }
-
-        if (dayChanged) {
-          const oneTimeTasks = nextState.tasks
-            .filter((task) => task.type === "one-time")
-            .map((task) => ({ ...task, completed: false, completedAt: null }));
-          const dailyHabits = DAILY_HABITS.map((name) => toTask(name, "daily", "medium"));
-          nextState = {
-            ...nextState,
-            tasks: [...dailyHabits, ...oneTimeTasks],
-            lastResetDay: nowKey,
-            completedCountByDay: { ...nextState.completedCountByDay, [nowKey]: 0 },
-            completedHabitsByDay: { ...nextState.completedHabitsByDay, [nowKey]: 0 },
-          };
-        }
-
-        return nextState;
+        return applyMidnightTransition(prev, nextVirtualNowMs);
       });
     }, VIRTUAL_MINUTE_MS);
     return () => clearInterval(clockInterval);
@@ -386,6 +393,14 @@ function App() {
         [nowKey]: prev.completedHabitsByDay?.[nowKey] ?? 0,
       },
     }));
+  };
+
+  const advanceVirtualTime = (minutes) => {
+    setPetState((prev) => {
+      if (!prev.clockInitialized) return prev;
+      const nextVirtualNowMs = (prev.virtualNowMs || Date.now()) + minutes * 60 * 1000;
+      return applyMidnightTransition(prev, nextVirtualNowMs);
+    });
   };
 
   const addOneTimeTask = (event) => {
@@ -580,6 +595,22 @@ function App() {
                 Feed
               </button>
               <span className="control-note">Ink +10 at midnight if &gt;50% tasks+habits complete.</span>
+              <button
+                className="time-advance-button"
+                type="button"
+                onClick={() => advanceVirtualTime(60)}
+                disabled={!petState.clockInitialized}
+              >
+                +1h
+              </button>
+              <button
+                className="time-advance-button"
+                type="button"
+                onClick={() => advanceVirtualTime(24 * 60)}
+                disabled={!petState.clockInitialized}
+              >
+                +1d
+              </button>
             </section>
 
             <section className="habit-section one-time">
