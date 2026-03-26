@@ -23,6 +23,7 @@ const DAILY_HABITS = [
 ];
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const VIRTUAL_MINUTE_MS = 1000;
 
 function getTodayKey(date = new Date()) {
   return date.toISOString().slice(0, 10);
@@ -49,7 +50,8 @@ function toTask(title, type = "daily", priority = "medium") {
 }
 
 function getDefaultState() {
-  const todayKey = getTodayKey();
+  const now = new Date();
+  const todayKey = getTodayKey(now);
   const habits = DAILY_HABITS.map((name) => toTask(name, "daily", "medium"));
   return {
     tasks: habits,
@@ -60,9 +62,14 @@ function getDefaultState() {
     skullActive: false,
     streakBonusDay: null,
     completedCountByDay: { [todayKey]: 0 },
+    completedHabitsByDay: { [todayKey]: 0 },
+    habitStreakCount: 0,
+    habitDoneStreakActive: false,
     lastResetDay: todayKey,
     lastMidnightCheckDay: null,
-    previewHourOverride: "",
+    clockInitialized: false,
+    initializedAtMs: null,
+    virtualNowMs: now.getTime(),
   };
 }
 
@@ -72,13 +79,6 @@ function getPetMood({ hunger, health, currentHour, hasCompletedToday }) {
   if (currentHour >= 18 && !hasCompletedToday) return "sad";
   if (hunger < 35) return "hungry";
   return "happy";
-}
-
-function getCurrentHour(override) {
-  if (override === "") return new Date().getHours();
-  const parsed = Number(override);
-  if (Number.isNaN(parsed)) return new Date().getHours();
-  return clamp(Math.floor(parsed), 0, 23);
 }
 
 function makeAudioCtx() {
@@ -191,23 +191,30 @@ function App() {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return getDefaultState();
       const parsed = JSON.parse(raw);
-      return { ...getDefaultState(), ...parsed };
+      const merged = { ...getDefaultState(), ...parsed };
+      if (!merged.virtualNowMs) {
+        merged.virtualNowMs = Date.now();
+      }
+      return merged;
     } catch {
       return getDefaultState();
     }
   });
   const [taskInput, setTaskInput] = useState("");
   const [taskPriority, setTaskPriority] = useState("medium");
+  const [clockInput, setClockInput] = useState("08:00");
   const audioRef = useRef(null);
 
-  const todayKey = getTodayKey();
-  const currentHour = getCurrentHour(petState.previewHourOverride);
+  const virtualNow = new Date(petState.virtualNowMs || Date.now());
+  const todayKey = getTodayKey(virtualNow);
+  const currentHour = virtualNow.getHours();
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(petState));
   }, [petState]);
 
   useEffect(() => {
+    if (!petState.clockInitialized) return undefined;
     const interval = setInterval(() => {
       setPetState((prev) => ({
         ...prev,
@@ -215,64 +222,86 @@ function App() {
       }));
     }, 60 * 60 * 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [petState.clockInitialized]);
 
   useEffect(() => {
-    const dayResetInterval = setInterval(() => {
-      const nowKey = getTodayKey();
+    if (!petState.clockInitialized) return undefined;
+    const clockInterval = setInterval(() => {
       setPetState((prev) => {
-        if (prev.lastResetDay === nowKey) return prev;
-        const oneTimeTasks = prev.tasks.filter((task) => task.type === "one-time");
-        const dailyHabits = DAILY_HABITS.map((name) => toTask(name, "daily", "medium"));
-        const merged = [...dailyHabits, ...oneTimeTasks];
-        return {
+        if (!prev.clockInitialized) return prev;
+
+        const nextVirtualNowMs = (prev.virtualNowMs || Date.now()) + 60 * 1000;
+        const now = new Date(nextVirtualNowMs);
+        const nowKey = getTodayKey(now);
+        const prevKey = getTodayKey(new Date(prev.virtualNowMs || Date.now()));
+        const dayChanged = nowKey !== prevKey;
+
+        let nextState = {
           ...prev,
-          tasks: merged,
-          streakBonusDay: null,
-          lastResetDay: nowKey,
-          completedCountByDay: { ...prev.completedCountByDay, [nowKey]: 0 },
+          virtualNowMs: nextVirtualNowMs,
         };
-      });
-    }, 60 * 1000);
-    return () => clearInterval(dayResetInterval);
-  }, []);
 
-  useEffect(() => {
-    const midnightPenaltyTimer = setInterval(() => {
-      const now = new Date();
-      const nowKey = getTodayKey(now);
-      const hour = now.getHours();
-      const minute = now.getMinutes();
-      if (hour !== 0 || minute > 5) return;
+        const hour = now.getHours();
+        const minute = now.getMinutes();
+        const atMidnight = hour === 0 && minute === 0;
 
-      setPetState((prev) => {
-        if (prev.lastMidnightCheckDay === nowKey) return prev;
-        const yesterday = new Date(now.getTime() - DAY_MS);
-        const yesterdayKey = getTodayKey(yesterday);
-        const hadUnfinishedHighTask = prev.tasks.some(
-          (task) => task.priority === "high" && !task.completed
-        );
-        if (!hadUnfinishedHighTask) {
-          return { ...prev, lastMidnightCheckDay: nowKey };
+        if (atMidnight && prev.lastMidnightCheckDay !== nowKey) {
+          const totalCount = prev.tasks.length;
+          const completedTotal = prev.tasks.filter((task) => task.completed).length;
+          const completedRatio = totalCount > 0 ? completedTotal / totalCount : 0;
+          const midnightInkBonus = completedRatio > 0.5 ? 10 : 0;
+
+          const hadUnfinishedHighTask = prev.tasks.some(
+            (task) => task.priority === "high" && !task.completed
+          );
+          const hadHabitToday = (prev.completedHabitsByDay[prevKey] ?? 0) > 0;
+          const nextHabitStreak = hadHabitToday ? prev.habitStreakCount + 1 : 0;
+          const nextStreakActive = nextHabitStreak >= 3;
+
+          let newInk = prev.ink + midnightInkBonus;
+          let newLevel = prev.level;
+          let needed = newLevel * 100;
+          while (newInk >= needed) {
+            newInk -= needed;
+            newLevel += 1;
+            needed = newLevel * 100;
+          }
+
+          nextState = {
+            ...nextState,
+            ink: newInk,
+            level: newLevel,
+            health: hadUnfinishedHighTask ? clamp(prev.health - 30, 0, 100) : prev.health,
+            skullActive: hadUnfinishedHighTask ? true : prev.skullActive,
+            habitStreakCount: nextHabitStreak,
+            habitDoneStreakActive: nextStreakActive,
+            streakBonusDay: nextStreakActive ? nowKey : null,
+            lastMidnightCheckDay: nowKey,
+          };
         }
-        return {
-          ...prev,
-          health: clamp(prev.health - 30, 0, 100),
-          skullActive: true,
-          lastMidnightCheckDay: nowKey,
-          completedCountByDay: {
-            ...prev.completedCountByDay,
-            [yesterdayKey]: prev.completedCountByDay[yesterdayKey] ?? 0,
-            [nowKey]: prev.completedCountByDay[nowKey] ?? 0,
-          },
-        };
+
+        if (dayChanged) {
+          const oneTimeTasks = nextState.tasks
+            .filter((task) => task.type === "one-time")
+            .map((task) => ({ ...task, completed: false, completedAt: null }));
+          const dailyHabits = DAILY_HABITS.map((name) => toTask(name, "daily", "medium"));
+          nextState = {
+            ...nextState,
+            tasks: [...dailyHabits, ...oneTimeTasks],
+            lastResetDay: nowKey,
+            completedCountByDay: { ...nextState.completedCountByDay, [nowKey]: 0 },
+            completedHabitsByDay: { ...nextState.completedHabitsByDay, [nowKey]: 0 },
+          };
+        }
+
+        return nextState;
       });
-    }, 60 * 1000);
-    return () => clearInterval(midnightPenaltyTimer);
-  }, []);
+    }, VIRTUAL_MINUTE_MS);
+    return () => clearInterval(clockInterval);
+  }, [petState.clockInitialized]);
 
   const hasCompletedToday = (petState.completedCountByDay[todayKey] ?? 0) > 0;
-  const streakBonusActive = petState.streakBonusDay === todayKey;
+  const streakBonusActive = petState.habitDoneStreakActive;
   const archetype = getArchetype(petState.level);
   const mood = getPetMood({
     hunger: petState.hunger,
@@ -290,8 +319,7 @@ function App() {
 
       const baseInk = PRIORITY_REWARD[task.priority] ?? 5;
       const todayDone = prev.completedCountByDay[todayKey] ?? 0;
-      const willTriggerStreak = todayDone + 1 >= 3;
-      const shouldDouble = prev.streakBonusDay === todayKey || willTriggerStreak;
+      const shouldDouble = prev.habitDoneStreakActive;
       const earnedInk = shouldDouble ? baseInk * 2 : baseInk;
 
       let newInk = prev.ink + earnedInk;
@@ -318,7 +346,11 @@ function App() {
           ...prev.completedCountByDay,
           [todayKey]: todayDone + 1,
         },
-        streakBonusDay: willTriggerStreak ? todayKey : prev.streakBonusDay,
+        completedHabitsByDay: {
+          ...prev.completedHabitsByDay,
+          [todayKey]:
+            (prev.completedHabitsByDay[todayKey] ?? 0) + (task.type === "daily" ? 1 : 0),
+        },
       };
     });
     playChime();
@@ -326,24 +358,34 @@ function App() {
 
   const feedPet = () => {
     setPetState((prev) => {
-      const earnedInk = 5;
-      let newInk = prev.ink + earnedInk;
-      let newLevel = prev.level;
-      let needed = newLevel * 100;
-      while (newInk >= needed) {
-        newInk -= needed;
-        newLevel += 1;
-        needed = newLevel * 100;
-      }
-
       return {
         ...prev,
         hunger: clamp(prev.hunger + 20, 0, 100),
-        ink: newInk,
-        level: newLevel,
       };
     });
     playChime(520, 720);
+  };
+
+  const initializeClock = (event) => {
+    event.preventDefault();
+    const [h, m] = clockInput.split(":");
+    const hour = clamp(Number(h), 0, 23);
+    const minute = clamp(Number(m), 0, 59);
+    const base = new Date();
+    base.setHours(hour, minute, 0, 0);
+    const nowKey = getTodayKey(base);
+    setPetState((prev) => ({
+      ...prev,
+      clockInitialized: true,
+      initializedAtMs: Date.now(),
+      virtualNowMs: base.getTime(),
+      lastResetDay: nowKey,
+      completedCountByDay: { ...prev.completedCountByDay, [nowKey]: prev.completedCountByDay[nowKey] ?? 0 },
+      completedHabitsByDay: {
+        ...prev.completedHabitsByDay,
+        [nowKey]: prev.completedHabitsByDay?.[nowKey] ?? 0,
+      },
+    }));
   };
 
   const addOneTimeTask = (event) => {
@@ -423,7 +465,6 @@ function App() {
                       <PixelCreature mood={mood} />
                     </span>
                     {petState.skullActive && <span className="pixel-item skull-item">SKL</span>}
-                    {streakBonusActive && <span className="pixel-item sparkle-item">SPR</span>}
                   </div>
                   <div className="screen-footer">
                     <span>HABIT-GOTCHI</span>
@@ -454,6 +495,23 @@ function App() {
           </div>
 
           <div className="right-panel">
+            {!petState.clockInitialized && (
+              <section className="clock-init">
+                <h2>Initialize Clock</h2>
+                <form onSubmit={initializeClock}>
+                  <label>
+                    Start Time
+                    <input
+                      type="time"
+                      value={clockInput}
+                      onChange={(event) => setClockInput(event.target.value)}
+                      required
+                    />
+                  </label>
+                  <button type="submit">Start Tracking</button>
+                </form>
+              </section>
+            )}
             <section className="stats">
               <div className="stat-row">
                 <span>Archetype</span>
@@ -499,33 +557,29 @@ function App() {
                 </div>
                 <span className="bar-meta">{petState.health}%</span>
               </div>
-              {streakBonusActive && (
-                <p className="bonus">
-                  Streak Bonus Active: Ink gains are doubled today and your pet wears a hat.
-                </p>
-              )}
+              <div className="stat-row">
+                <span>Clock</span>
+                <strong>
+                  {virtualNow.toLocaleDateString()} {String(currentHour).padStart(2, "0")}:
+                  {String(virtualNow.getMinutes()).padStart(2, "0")}
+                </strong>
+              </div>
+              <div className="stat-row">
+                <span>Habit Streak</span>
+                <strong>{petState.habitStreakCount} days</strong>
+              </div>
             </section>
 
             <section className="controls">
-              <button className="feed-button" type="button" onClick={feedPet}>
+              <button
+                className="feed-button"
+                type="button"
+                onClick={feedPet}
+                disabled={!petState.clockInitialized}
+              >
                 Feed
               </button>
-              <label className="time-preview">
-                Simulate Hour
-                <input
-                  type="number"
-                  min="0"
-                  max="23"
-                  value={petState.previewHourOverride}
-                  onChange={(event) =>
-                    setPetState((prev) => ({
-                      ...prev,
-                      previewHourOverride: event.target.value,
-                    }))
-                  }
-                  placeholder="local hour"
-                />
-              </label>
+              <span className="control-note">Ink +10 at midnight if &gt;50% tasks+habits complete.</span>
             </section>
 
             <section className="habit-section one-time">
