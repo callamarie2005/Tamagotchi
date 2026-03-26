@@ -18,7 +18,7 @@ const ARCHETYPES = [
 
 const DAILY_HABITS = [
   "Read 10 pages",
-  "Water plants",
+  "Exercise",
   "Write one paragraph",
 ];
 
