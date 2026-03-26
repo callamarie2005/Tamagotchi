@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
+import tamagotchiShell from "./assets/tamagotchi_shell.svg";
 
 const STORAGE_KEY = "habit_gotchi_v2";
 
@@ -73,14 +74,6 @@ function getPetMood({ hunger, health, currentHour, hasCompletedToday }) {
   return "happy";
 }
 
-function getPetEmoji(mood, archetype) {
-  if (mood === "sick") return "▩";
-  if (mood === "exhausted") return "💀";
-  if (mood === "sad") return "😵";
-  if (mood === "hungry") return "🍽️";
-  return archetype.emoji;
-}
-
 function getCurrentHour(override) {
   if (override === "") return new Date().getHours();
   const parsed = Number(override);
@@ -91,6 +84,105 @@ function getCurrentHour(override) {
 function makeAudioCtx() {
   const Ctx = window.AudioContext || window.webkitAudioContext;
   return Ctx ? new Ctx() : null;
+}
+
+const SPRITE_TEMPLATE = [
+  "................",
+  "......kkkk......",
+  "....kkwwwwkk....",
+  "...kwwwwwwwwk...",
+  "..kwwwwwwwwwwk..",
+  "..kwwwwwwwwwwk..",
+  ".kwwwwwwwwwwwwk.",
+  ".kwwwwwwwwwwwwk.",
+  ".kwwwwwwwwwwwwk.",
+  ".kwwwwwwwwwwwwk.",
+  ".kwwwwwwwwwwwwk.",
+  "..kwwwwwwwwwwk..",
+  "..kwwpwwwwpwwk..",
+  "...kkwwwwwwkk...",
+  ".....kkkkkk.....",
+  "................",
+];
+
+const SPRITE_COLORS = {
+  k: "#1d1f27",
+  w: "#eef9f1",
+  p: "#f2a7bf",
+  s: "#9fa7a4",
+};
+
+function setPixel(sprite, x, y, value) {
+  if (x < 0 || y < 0 || y >= sprite.length || x >= sprite[0].length) return;
+  sprite[y][x] = value;
+}
+
+function buildCreatureSprite(mood) {
+  const sprite = SPRITE_TEMPLATE.map((row) => row.split(""));
+
+  if (mood === "sick") {
+    for (let y = 0; y < sprite.length; y += 1) {
+      for (let x = 0; x < sprite[y].length; x += 1) {
+        if (sprite[y][x] === "w" || sprite[y][x] === "p") {
+          sprite[y][x] = "s";
+        }
+      }
+    }
+  }
+
+  if (mood === "exhausted") {
+    [5, 6, 7].forEach((x) => setPixel(sprite, x, 7, "k"));
+    [9, 10, 11].forEach((x) => setPixel(sprite, x, 7, "k"));
+  } else {
+    setPixel(sprite, 6, 7, "k");
+    setPixel(sprite, 10, 7, "k");
+  }
+
+  if (mood === "sad" || mood === "hungry") {
+    setPixel(sprite, 7, 11, "k");
+    setPixel(sprite, 8, 10, "k");
+    setPixel(sprite, 9, 10, "k");
+    setPixel(sprite, 10, 11, "k");
+  } else if (mood === "exhausted" || mood === "sick") {
+    [7, 8, 9, 10].forEach((x) => setPixel(sprite, x, 11, "k"));
+  } else {
+    setPixel(sprite, 7, 10, "k");
+    setPixel(sprite, 8, 11, "k");
+    setPixel(sprite, 9, 11, "k");
+    setPixel(sprite, 10, 10, "k");
+  }
+
+  if (mood === "sick") {
+    setPixel(sprite, 4, 6, "k");
+    setPixel(sprite, 11, 5, "k");
+    setPixel(sprite, 12, 9, "k");
+  }
+
+  return sprite;
+}
+
+function PixelCreature({ mood }) {
+  const sprite = useMemo(() => buildCreatureSprite(mood), [mood]);
+
+  return (
+    <div className={`pixel-creature ${mood}`} role="img" aria-label={`pixel pet ${mood}`}>
+      <div className="pixel-sprite">
+        {sprite.map((row, y) =>
+          row.map((cell, x) =>
+            cell === "." ? (
+              <span key={`${x}-${y}`} className="pixel-cell empty" />
+            ) : (
+              <span
+                key={`${x}-${y}`}
+                className="pixel-cell"
+                style={{ backgroundColor: SPRITE_COLORS[cell] ?? "#1d1f27" }}
+              />
+            )
+          )
+        )}
+      </div>
+    </div>
+  );
 }
 
 function App() {
@@ -188,7 +280,6 @@ function App() {
     currentHour,
     hasCompletedToday,
   });
-  const petEmoji = getPetEmoji(mood, archetype);
 
   const pagesToNextLevel = useMemo(() => petState.level * 100, [petState.level]);
 
@@ -317,158 +408,176 @@ function App() {
             Shop
           </button>
         </header>
+        <div className="device-grid">
+          <div className="left-panel">
+            <section className="pixel-canvas" aria-live="polite">
+              <div className="tamagotchi-shell" style={{ backgroundImage: `url(${tamagotchiShell})` }}>
+                <div className="tamagotchi-screen">
+                  <div className="screen-top-icons">
+                    <span className="pixel-bubble">❤</span>
+                    <span className="pixel-bubble">✒</span>
+                  </div>
+                  <div className={`pet ${mood}`}>
+                    {streakBonusActive && <span className="pixel-item hat-item">HAT</span>}
+                    <span className="pet-core">
+                      <PixelCreature mood={mood} />
+                    </span>
+                    {petState.skullActive && <span className="pixel-item skull-item">SKL</span>}
+                    {streakBonusActive && <span className="pixel-item sparkle-item">SPR</span>}
+                  </div>
+                  <div className="screen-footer">
+                    <span>HABIT-GOTCHI</span>
+                    <span>STATUS: {mood.toUpperCase()}</span>
+                  </div>
+                </div>
+              </div>
+            </section>
 
-        <section className="stats">
-          <div className="stat-row">
-            <span>Archetype</span>
-            <strong>
-              {archetype.name} (Lv {petState.level})
-            </strong>
+            <section className="habit-section">
+              <h2>Daily Habits</h2>
+              <ul>
+                {taskGroups.daily.map((task) => (
+                  <li key={task.id} className={task.completed ? "done" : ""}>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={task.completed}
+                        onChange={() => completeTask(task.id)}
+                      />
+                      <span>{task.title}</span>
+                    </label>
+                    <small>{task.priority.toUpperCase()}</small>
+                  </li>
+                ))}
+              </ul>
+            </section>
           </div>
-          <div className="stat-row">
-            <span>Ink Pages</span>
-            <strong>
-              {petState.ink} / {pagesToNextLevel}
-            </strong>
-          </div>
-          <div className="bar-wrap">
-            <label htmlFor="ink-bar">Pages to Next Archetype</label>
-            <div className="bar-track">
-              <div
-                id="ink-bar"
-                className="bar-fill ink"
-                style={{ width: `${(petState.ink / pagesToNextLevel) * 100}%` }}
-              />
-            </div>
-          </div>
-          <div className="bar-wrap">
-            <label htmlFor="hunger-bar">Hunger</label>
-            <div className="bar-track">
-              <div
-                id="hunger-bar"
-                className="bar-fill hunger"
-                style={{ width: `${petState.hunger}%` }}
-              />
-            </div>
-            <span className="bar-meta">{petState.hunger}%</span>
-          </div>
-          <div className="bar-wrap">
-            <label htmlFor="health-bar">Health</label>
-            <div className="bar-track">
-              <div
-                id="health-bar"
-                className="bar-fill health"
-                style={{ width: `${petState.health}%` }}
-              />
-            </div>
-            <span className="bar-meta">{petState.health}%</span>
-          </div>
-          {streakBonusActive && (
-            <p className="bonus">
-              ✨ Streak Bonus Active: Ink gains are doubled today and your pet wears a hat.
-            </p>
-          )}
-        </section>
 
-        <section className="pixel-canvas" aria-live="polite">
-          <div className={`pet ${mood}`}>
-            {streakBonusActive && <span className="hat">🎩</span>}
-            <span className="pet-core">{petEmoji}</span>
-            {petState.skullActive && <span className="status-icon">☠️</span>}
-            {streakBonusActive && <span className="sparkle">✨</span>}
-          </div>
-          <p className="mood-label">State: {mood}</p>
-        </section>
-
-        <section className="controls">
-          <button className="feed-button" type="button" onClick={feedPet}>
-            Feed
-          </button>
-          <label className="time-preview">
-            Simulate Hour
-            <input
-              type="number"
-              min="0"
-              max="23"
-              value={petState.previewHourOverride}
-              onChange={(event) =>
-                setPetState((prev) => ({
-                  ...prev,
-                  previewHourOverride: event.target.value,
-                }))
-              }
-              placeholder="local hour"
-            />
-          </label>
-        </section>
-
-        <section className="habit-section">
-          <h2>Daily Habits</h2>
-          <ul>
-            {taskGroups.daily.map((task) => (
-              <li key={task.id} className={task.completed ? "done" : ""}>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={task.completed}
-                    onChange={() => completeTask(task.id)}
+          <div className="right-panel">
+            <section className="stats">
+              <div className="stat-row">
+                <span>Archetype</span>
+                <strong>
+                  {archetype.name} (Lv {petState.level})
+                </strong>
+              </div>
+              <div className="stat-row">
+                <span>Ink Pages</span>
+                <strong>
+                  {petState.ink} / {pagesToNextLevel}
+                </strong>
+              </div>
+              <div className="bar-wrap">
+                <label htmlFor="ink-bar">Pages to Next Archetype</label>
+                <div className="bar-track">
+                  <div
+                    id="ink-bar"
+                    className="bar-fill ink"
+                    style={{ width: `${(petState.ink / pagesToNextLevel) * 100}%` }}
                   />
-                  <span>{task.title}</span>
-                </label>
-                <small>{task.priority.toUpperCase()}</small>
-              </li>
-            ))}
-          </ul>
-        </section>
+                </div>
+              </div>
+              <div className="bar-wrap">
+                <label htmlFor="hunger-bar">Hunger</label>
+                <div className="bar-track">
+                  <div
+                    id="hunger-bar"
+                    className="bar-fill hunger"
+                    style={{ width: `${petState.hunger}%` }}
+                  />
+                </div>
+                <span className="bar-meta">{petState.hunger}%</span>
+              </div>
+              <div className="bar-wrap">
+                <label htmlFor="health-bar">Health</label>
+                <div className="bar-track">
+                  <div
+                    id="health-bar"
+                    className="bar-fill health"
+                    style={{ width: `${petState.health}%` }}
+                  />
+                </div>
+                <span className="bar-meta">{petState.health}%</span>
+              </div>
+              {streakBonusActive && (
+                <p className="bonus">
+                  Streak Bonus Active: Ink gains are doubled today and your pet wears a hat.
+                </p>
+              )}
+            </section>
 
-        <section className="habit-section one-time">
-          <h2>One-Time Tasks</h2>
-          <form className="task-form" onSubmit={addOneTimeTask}>
-            <input
-              type="text"
-              value={taskInput}
-              onChange={(event) => setTaskInput(event.target.value)}
-              placeholder="Add one-time task..."
-            />
-            <div className="priority-toggle">
-              {["low", "medium", "high"].map((level) => (
-                <label key={level}>
-                  <input
-                    type="radio"
-                    name="priority"
-                    value={level}
-                    checked={taskPriority === level}
-                    onChange={(event) => setTaskPriority(event.target.value)}
-                  />
-                  {level}
-                </label>
-              ))}
-            </div>
-            <button type="submit">Add Task</button>
-          </form>
-          <ul>
-            {taskGroups.oneTime.length === 0 && (
-              <li className="empty-row">
-                <span>No one-time tasks yet.</span>
-              </li>
-            )}
-            {taskGroups.oneTime.map((task) => (
-              <li key={task.id} className={task.completed ? "done" : ""}>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={task.completed}
-                    onChange={() => completeTask(task.id)}
-                  />
-                  <span>{task.title}</span>
-                </label>
-                <small className={task.priority === "high" ? "critical" : ""}>
-                  {task.priority === "high" ? "CRITICAL" : task.priority.toUpperCase()}
-                </small>
-              </li>
-            ))}
-          </ul>
-        </section>
+            <section className="controls">
+              <button className="feed-button" type="button" onClick={feedPet}>
+                Feed
+              </button>
+              <label className="time-preview">
+                Simulate Hour
+                <input
+                  type="number"
+                  min="0"
+                  max="23"
+                  value={petState.previewHourOverride}
+                  onChange={(event) =>
+                    setPetState((prev) => ({
+                      ...prev,
+                      previewHourOverride: event.target.value,
+                    }))
+                  }
+                  placeholder="local hour"
+                />
+              </label>
+            </section>
+
+            <section className="habit-section one-time">
+              <h2>One-Time Tasks</h2>
+              <form className="task-form" onSubmit={addOneTimeTask}>
+                <input
+                  type="text"
+                  value={taskInput}
+                  onChange={(event) => setTaskInput(event.target.value)}
+                  placeholder="Add one-time task..."
+                />
+                <div className="priority-toggle">
+                  {["low", "medium", "high"].map((level) => (
+                    <label key={level}>
+                      <input
+                        type="radio"
+                        name="priority"
+                        value={level}
+                        checked={taskPriority === level}
+                        onChange={(event) => setTaskPriority(event.target.value)}
+                      />
+                      {level}
+                    </label>
+                  ))}
+                </div>
+                <button type="submit">Add Task</button>
+              </form>
+              <ul>
+                {taskGroups.oneTime.length === 0 && (
+                  <li className="empty-row">
+                    <span>No one-time tasks yet.</span>
+                  </li>
+                )}
+                {taskGroups.oneTime.map((task) => (
+                  <li key={task.id} className={task.completed ? "done" : ""}>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={task.completed}
+                        onChange={() => completeTask(task.id)}
+                      />
+                      <span>{task.title}</span>
+                    </label>
+                    <small className={task.priority === "high" ? "critical" : ""}>
+                      {task.priority === "high" ? "CRITICAL" : task.priority.toUpperCase()}
+                    </small>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          </div>
+        </div>
       </section>
     </main>
   );

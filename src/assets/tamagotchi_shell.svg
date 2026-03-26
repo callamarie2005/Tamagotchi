@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 560" role="img" aria-labelledby="title desc">
+  <title id="title">Tamagotchi shell frame</title>
+  <desc id="desc">A pink tamagotchi handheld frame with a screen cutout and three buttons.</desc>
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f4c8cf" />
+      <stop offset="1" stop-color="#e2a8b2" />
+    </linearGradient>
+    <linearGradient id="bezel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffdbe0" />
+      <stop offset="1" stop-color="#eeb9c2" />
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="18" stdDeviation="12" flood-opacity="0.22" />
+    </filter>
+  </defs>
+  <g filter="url(#shadow)">
+    <ellipse cx="210" cy="280" rx="176" ry="236" fill="url(#body)" stroke="#c88b99" stroke-width="8" />
+    <rect x="114" y="126" width="192" height="194" rx="16" fill="url(#bezel)" stroke="#d597a5" stroke-width="6" />
+    <rect x="128" y="140" width="164" height="166" rx="10" fill="#f3f5ef" stroke="#c7aeb4" stroke-width="4" />
+    <path d="M114 126 L154 96 H266 L306 126" fill="url(#bezel)" stroke="#d597a5" stroke-width="6" />
+    <circle cx="134" cy="56" r="22" fill="url(#body)" stroke="#c88b99" stroke-width="7" />
+    <path d="M150 72 C174 60 174 34 150 22" fill="none" stroke="#c88b99" stroke-width="10" stroke-linecap="round" />
+    <circle cx="155" cy="402" r="23" fill="#f0bcc5" stroke="#bb7f8d" stroke-width="5" />
+    <circle cx="210" cy="420" r="23" fill="#f0bcc5" stroke="#bb7f8d" stroke-width="5" />
+    <circle cx="265" cy="402" r="23" fill="#f0bcc5" stroke="#bb7f8d" stroke-width="5" />
+    <text x="146" y="372" font-size="34" font-family="monospace" fill="#be7e8d">A</text>
+    <text x="201" y="388" font-size="34" font-family="monospace" fill="#be7e8d">B</text>
+    <text x="256" y="372" font-size="34" font-family="monospace" fill="#be7e8d">C</text>
+  </g>
+</svg>
